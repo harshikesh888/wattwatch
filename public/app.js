@@ -4,7 +4,7 @@ const RATE_PER_KWH = 8;
 const CO2_PER_KWH = 0.82;
 const STANDBY_KW = 0.02;
 const WASTE_THRESHOLD_KW = 0.2;
-const ROOM_COLORS = ['#10a875', '#e58a34', '#5387c1', '#d75060', '#8c68bd', '#29a5a5', '#b77b32', '#7785a2'];
+const ROOM_COLORS = ['#00e5ff', '#2e9bff', '#7c5cff', '#00e5a0', '#ff4d6d', '#ffbe0b', '#7df3ff', '#38f8ff'];
 const APPLIANCES = [
   { key: 'lights', label: 'Lights', rating: 'lights_kW' },
   { key: 'fans', label: 'Fans', rating: 'fans_kW' },
@@ -62,7 +62,180 @@ let tickTimer = null;
 let tickInProgress = false;
 let toastTimer = null;
 let backendOnline = false;
+let authToken = localStorage.getItem('wattwatch-token') || '';
+let authUser = safeParse(localStorage.getItem('wattwatch-user'));
+let authTab = 'login';
 const energyCreateRetryAfter = {};
+
+function isAuthed() {
+  return Boolean(authToken && authUser);
+}
+
+function authHeaders(extra = {}) {
+  if (authToken) return { ...extra, Authorization: `Bearer ${authToken}` };
+  return { ...extra };
+}
+
+function setAuthError(message) {
+  const box = document.getElementById('auth-error');
+  if (!box) return;
+  if (!message) {
+    box.hidden = true;
+    box.textContent = '';
+  } else {
+    box.hidden = false;
+    box.textContent = message;
+  }
+}
+
+function setAuthLoading(loading) {
+  for (const id of ['login-submit', 'register-submit']) {
+    const btn = document.getElementById(id);
+    if (btn) btn.disabled = loading;
+  }
+}
+
+function updateAuthTab() {
+  document.querySelectorAll('[data-auth-tab]').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.authTab === authTab);
+  });
+  document.getElementById('login-form').hidden = authTab !== 'login';
+  document.getElementById('register-form').hidden = authTab !== 'register';
+  setAuthError('');
+}
+
+function updateUserChips() {
+  const name = authUser?.name || 'User';
+  const email = authUser?.email || '';
+  const initial = (name.trim()[0] || 'W').toUpperCase();
+  for (const [chipId, avatarId, nameId] of [['user-chip', 'user-avatar', 'user-name']]) {
+    const chip = document.getElementById(chipId);
+    if (chip) chip.hidden = !isAuthed();
+    const avatar = document.getElementById(avatarId);
+    if (avatar) avatar.textContent = initial;
+    const label = document.getElementById(nameId);
+    if (label) label.textContent = name;
+  }
+  const side = document.getElementById('sidebar-user');
+  if (side) side.hidden = !isAuthed();
+  const sideAvatar = document.getElementById('sidebar-avatar');
+  if (sideAvatar) sideAvatar.textContent = initial;
+  const sideName = document.getElementById('sidebar-user-name');
+  if (sideName) sideName.textContent = name;
+  const sideEmail = document.getElementById('sidebar-user-email');
+  if (sideEmail) sideEmail.textContent = email;
+  const reporter = document.getElementById('reporter-name');
+  if (reporter && authUser?.name && !localStorage.getItem('wattwatch-reporter-name')) {
+    reporter.value = authUser.name;
+  }
+}
+
+function showAuthScreen() {
+  document.getElementById('auth-screen').hidden = false;
+  document.getElementById('app-shell').hidden = true;
+  if (tickTimer) window.clearInterval(tickTimer);
+  tickTimer = null;
+}
+
+function showApp() {
+  document.getElementById('auth-screen').hidden = true;
+  document.getElementById('app-shell').hidden = false;
+  updateUserChips();
+  renderInitial();
+  refreshProblems().finally(() => {
+    restartTickTimer();
+    drawPowerChart();
+  });
+}
+
+function saveAuth(token, user) {
+  authToken = token;
+  authUser = user;
+  try {
+    localStorage.setItem('wattwatch-token', token);
+    localStorage.setItem('wattwatch-user', JSON.stringify(user));
+  } catch { /* storage optional */ }
+}
+
+function clearAuth() {
+  authToken = '';
+  authUser = null;
+  try {
+    localStorage.removeItem('wattwatch-token');
+    localStorage.removeItem('wattwatch-user');
+  } catch { /* ignore */ }
+}
+
+async function handleLogout() {
+  try {
+    if (authToken) {
+      await fetch('/api/auth/logout', { method: 'POST', headers: authHeaders() }).catch(() => null);
+    }
+  } finally {
+    clearAuth();
+    problems = [];
+    updateUserChips();
+    showAuthScreen();
+    showToast('Logged out. See you on the neon grid.');
+  }
+}
+
+async function handleAuthResponse(response) {
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const detail = Array.isArray(body.detail)
+      ? body.detail.map((item) => item.msg).join(', ')
+      : body.detail;
+    throw new Error(detail || `Authentication failed (${response.status})`);
+  }
+  if (!body.token || !body.user) throw new Error('Invalid auth response from server.');
+  return body;
+}
+
+async function submitLogin(event) {
+  event.preventDefault();
+  setAuthError('');
+  setAuthLoading(true);
+  try {
+    const email = document.getElementById('login-email').value.trim();
+    const password = document.getElementById('login-password').value;
+    const body = await handleAuthResponse(await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    }));
+    saveAuth(body.token, body.user);
+    showApp();
+    showToast(`Welcome back, ${body.user.name.split(' ')[0]} ⚡`);
+  } catch (error) {
+    setAuthError(error.message);
+  } finally {
+    setAuthLoading(false);
+  }
+}
+
+async function submitRegister(event) {
+  event.preventDefault();
+  setAuthError('');
+  setAuthLoading(true);
+  try {
+    const name = document.getElementById('register-name').value.trim();
+    const email = document.getElementById('register-email').value.trim();
+    const password = document.getElementById('register-password').value;
+    const body = await handleAuthResponse(await fetch('/api/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, email, password }),
+    }));
+    saveAuth(body.token, body.user);
+    showApp();
+    showToast(`Account created — welcome, ${body.user.name.split(' ')[0]} ✦`);
+  } catch (error) {
+    setAuthError(error.message);
+  } finally {
+    setAuthLoading(false);
+  }
+}
 
 function safeParse(raw) {
   try { return raw ? JSON.parse(raw) : null; } catch { return null; }
@@ -166,15 +339,24 @@ function randomOccupiedAppliances() {
 }
 
 async function apiRequest(path, options = {}) {
-  const headers = { ...(options.headers || {}) };
+  const headers = authHeaders({ ...(options.headers || {}) });
   if (options.body) headers['Content-Type'] = 'application/json';
   const response = await fetch(path, { ...options, headers });
+  if (response.status === 401 && isAuthed() && path.startsWith('/api/') && !path.startsWith('/api/auth/')) {
+    clearAuth();
+    updateUserChips();
+    showAuthScreen();
+    setAuthError('Session expired. Please log in again.');
+    throw new Error('Session expired. Please log in again.');
+  }
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
     const detail = Array.isArray(body.detail)
       ? body.detail.map((item) => item.msg).join(', ')
       : body.detail;
-    throw new Error(detail || `Request failed (${response.status})`);
+    const error = new Error(detail || `Request failed (${response.status})`);
+    error.status = response.status;
+    throw error;
   }
   if (response.status === 204) return null;
   return response.json();
@@ -190,6 +372,7 @@ function setBackendStatus(online) {
 }
 
 async function refreshProblems({ quiet = false } = {}) {
+  if (!isAuthed()) return false;
   try {
     const result = await apiRequest('/api/problems');
     problems = Array.isArray(result.items) ? result.items : [];
@@ -198,6 +381,7 @@ async function refreshProblems({ quiet = false } = {}) {
     renderLive();
     return true;
   } catch (error) {
+    if (error && error.status === 401) return false;
     setBackendStatus(false);
     if (!quiet) showToast(`Backend unavailable: ${error.message}`, 'error');
     return false;
@@ -397,8 +581,8 @@ function sparkline(roomId) {
     const y = 40 - (value / max) * 34;
     return `${x.toFixed(1)},${y.toFixed(1)}`;
   }).join(' ');
-  const color = roomStatus(ROOMS.find((room) => room.id === roomId)) === 'wasting' ? '#d94d5c' : '#11956d';
-  return `<svg class="sparkline" viewBox="0 0 240 46" role="img" aria-label="Recent power readings"><polyline points="${points}" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+  const color = roomStatus(ROOMS.find((room) => room.id === roomId)) === 'wasting' ? '#ff4d6d' : '#00e5ff';
+  return `<svg class="sparkline" viewBox="0 0 240 46" role="img" aria-label="Recent power readings"><polyline points="${points}" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="filter:drop-shadow(0 0 4px ${color})"/></svg>`;
 }
 
 function roomCardMarkup(room, compact = false) {
@@ -503,21 +687,23 @@ function drawPowerChart() {
   context.textBaseline = 'middle';
   for (let tick = 0; tick <= 4; tick += 1) {
     const y = top + (plotHeight * tick) / 4;
-    context.strokeStyle = '#edf1ef';
+    context.strokeStyle = 'rgba(0,229,255,0.12)';
     context.lineWidth = 1;
     context.beginPath();
     context.moveTo(left, y);
     context.lineTo(width - right, y);
     context.stroke();
-    context.fillStyle = '#9aa6a1';
+    context.fillStyle = '#5f7f9c';
     context.fillText(`${(maxPower * (1 - tick / 4)).toFixed(1)}`, left - 7, y);
   }
   ROOMS.forEach((room, roomIndex) => {
     const values = (sim.readings[room.id] || []).slice(-50);
     if (values.length < 2) return;
-    context.strokeStyle = ROOM_COLORS[roomIndex];
-    context.lineWidth = roomIndex === 0 ? 2 : 1.5;
-    context.globalAlpha = 0.86;
+    context.strokeStyle = ROOM_COLORS[roomIndex % ROOM_COLORS.length];
+    context.lineWidth = roomIndex === 0 ? 2.2 : 1.6;
+    context.globalAlpha = 0.92;
+    context.shadowColor = ROOM_COLORS[roomIndex % ROOM_COLORS.length];
+    context.shadowBlur = 8;
     context.beginPath();
     values.forEach((reading, index) => {
       const x = left + (index / Math.max(1, values.length - 1)) * plotWidth;
@@ -527,6 +713,7 @@ function drawPowerChart() {
     });
     context.stroke();
   });
+  context.shadowBlur = 0;
   context.globalAlpha = 1;
 }
 
@@ -564,6 +751,7 @@ function fillReportFormOptions() {
   ).join('');
   const savedReporter = localStorage.getItem('wattwatch-reporter-name');
   if (savedReporter) document.getElementById('reporter-name').value = savedReporter;
+  else if (authUser?.name) document.getElementById('reporter-name').value = authUser.name;
 }
 
 async function createMaintenanceProblem(form) {
@@ -767,6 +955,7 @@ function triggerDemoWaste() {
 
 async function simulatorTick() {
   if (tickInProgress) return;
+  if (!isAuthed()) return;
   tickInProgress = true;
   sim.tick += 1;
   const pendingRequests = [];
@@ -850,6 +1039,12 @@ function setupEvents() {
   document.addEventListener('click', (event) => {
     const target = event.target instanceof Element ? event.target : null;
     if (!target) return;
+    const authTabBtn = target.closest('[data-auth-tab]');
+    if (authTabBtn) {
+      authTab = authTabBtn.dataset.authTab;
+      updateAuthTab();
+      return;
+    }
     const navButton = target.closest('[data-view]');
     if (navButton) {
       showView(navButton.dataset.view);
@@ -878,10 +1073,21 @@ function setupEvents() {
     if (target.closest('#empty-all')) emptyAllRooms();
     if (target.closest('#fill-all')) fillAllRooms();
     if (target.closest('#reset-day')) resetSimulationDay();
+    if (target.closest('#logout-btn') || target.closest('#sidebar-logout')) handleLogout();
+    if (target.closest('#fill-demo')) {
+      document.getElementById('login-email').value = 'demo@wattwatch.local';
+      document.getElementById('login-password').value = 'demo1234';
+      authTab = 'login';
+      updateAuthTab();
+      setAuthError('');
+      return;
+    }
     if (target.closest('#mobile-menu')) document.body.classList.add('sidebar-open');
     if (target.closest('#mobile-scrim')) document.body.classList.remove('sidebar-open');
   });
 
+  document.getElementById('login-form').addEventListener('submit', submitLogin);
+  document.getElementById('register-form').addEventListener('submit', submitRegister);
   document.getElementById('problem-form').addEventListener('submit', (event) => {
     event.preventDefault();
     createMaintenanceProblem(event.currentTarget);
@@ -902,12 +1108,39 @@ function renderInitial() {
 
 async function start() {
   setupEvents();
-  renderInitial();
-  await refreshProblems();
-  restartTickTimer();
-  window.setInterval(() => refreshProblems({ quiet: true }), 15_000);
+  updateAuthTab();
+  updateUserChips();
+  renderLegend();
+  fillReportFormOptions();
+  renderLive();
+  // Try to restore an existing session before showing the app.
+  if (authToken) {
+    try {
+      const me = await fetch('/api/auth/me', { headers: authHeaders() });
+      if (me.ok) {
+        const body = await me.json();
+        if (body.user) {
+          authUser = body.user;
+          try { localStorage.setItem('wattwatch-user', JSON.stringify(authUser)); } catch { /* ignore */ }
+          showApp();
+        } else {
+          throw new Error('invalid session');
+        }
+      } else {
+        throw new Error('invalid session');
+      }
+    } catch {
+      clearAuth();
+      updateUserChips();
+      showAuthScreen();
+    }
+  } else {
+    showAuthScreen();
+  }
+  window.setInterval(() => { if (isAuthed()) refreshProblems({ quiet: true }); }, 15_000);
   window.setInterval(() => {
-    document.getElementById('clock').textContent = formatClock();
+    const clock = document.getElementById('clock');
+    if (clock && clock.isConnected) clock.textContent = formatClock();
   }, 1000);
 }
 

@@ -1,6 +1,6 @@
 # WattWatch
 
-WattWatch is a campus energy-waste monitor built with plain HTML, CSS and JavaScript, served by a FastAPI backend.
+WattWatch is a campus energy-waste monitor built with plain HTML, CSS and JavaScript, served by a FastAPI backend. The UI uses a neon blue / cyan dark theme.
 
 ## Run locally
 
@@ -13,9 +13,25 @@ python -m pip install -r requirements.txt
 
 Open `http://localhost:8000`. Interactive API documentation is available at `/docs`.
 
+## Authentication
+
+All `/api/problems` endpoints require a `Authorization: Bearer <token>` header.
+
+- `POST /api/auth/register` — `{name, email, password>=6}` → `{token, user}`
+- `POST /api/auth/login` — `{email, password}` → `{token, user}`
+- `GET /api/auth/me` — returns the current user for a valid token
+- `POST /api/auth/logout` — stateless acknowledgement (client discards the token)
+
+Security details:
+
+- Passwords are hashed with PBKDF2-HMAC-SHA256 (200k iterations, 16-byte salt, stdlib only).
+- Sessions are HS256 JWTs signed with `WATTWATCH_SECRET_KEY` (or `data/.secret.key`, auto-generated). Default TTL is 7 days (`WATTWATCH_TOKEN_TTL_HOURS`).
+- A demo account is seeded on first boot: `demo@wattwatch.local` / `demo1234` (disable with `WATTWATCH_SEED_DEMO=0`).
+- The frontend shows a login gate first, stores the token in `localStorage`, attaches it to every API call, and returns to login on `401`.
+
 ## Problem storage
 
-The backend stores maintenance reports and active energy-waste alerts in SQLite at `data/wattwatch.sqlite3`. Set `WATTWATCH_DB_PATH` to use a different file.
+The backend stores users plus maintenance reports and active energy-waste alerts in SQLite at `data/wattwatch.sqlite3`. Set `WATTWATCH_DB_PATH` to use a different file.
 
 - `GET /api/problems` lists unresolved problems; `kind=maintenance` or `kind=energy_waste` filters the list.
 - `POST /api/problems` creates a problem.
@@ -26,4 +42,4 @@ The UI's **Mark Fixed** action deletes the record. Energy alerts are removed aut
 
 ## Notes
 
-Room simulation settings and daily energy totals are saved in the browser. Problem records are stored by the FastAPI service and shared across browser sessions. The previous sign-in was a client-only demo, so this version uses a reporter-name field instead of pretending to provide secure authentication. The problem API is unauthenticated; add real authentication and authorization before exposing a deployment to untrusted users.
+Room simulation settings and daily energy totals are saved in the browser. Problem records are stored by the FastAPI service and shared across browser sessions.
