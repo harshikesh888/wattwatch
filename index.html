@@ -2,12 +2,194 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Monitor campus energy use, prioritize urgent problems, and track repairs with WattWatch."
+    />
+    <meta name="theme-color" content="#0f172a" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>WattWatch — Campus Energy Waste Detector</title>
+    <link rel="stylesheet" href="/styles.css" />
+    <title>WattWatch — Campus Energy Intelligence</title>
   </head>
   <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+    <div class="app-shell">
+      <aside class="sidebar" id="sidebar">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true">ϟ</div>
+          <div>
+            <div class="brand-name">WattWatch <span class="live-tag">LIVE</span></div>
+            <div class="brand-caption">Campus Energy Intelligence</div>
+          </div>
+        </div>
+
+        <nav class="main-nav" aria-label="Main navigation">
+          <div class="nav-heading">Operations</div>
+          <button class="nav-link active" type="button" data-view="dashboard">
+            <span class="nav-icon" aria-hidden="true">▦</span>
+            <span>Waste Dashboard</span>
+          </button>
+          <button class="nav-link" type="button" data-view="alerts">
+            <span class="nav-icon" aria-hidden="true">⚠</span>
+            <span>Urgent Problems</span>
+            <span class="nav-count rose" id="nav-alert-count">0</span>
+          </button>
+          <button class="nav-link" type="button" data-view="rooms">
+            <span class="nav-icon" aria-hidden="true">▤</span>
+            <span>Campus Rooms</span>
+          </button>
+          <button class="nav-link" type="button" data-view="impact">
+            <span class="nav-icon" aria-hidden="true">♧</span>
+            <span>Impact</span>
+          </button>
+          <button class="nav-link" type="button" data-view="reports">
+            <span class="nav-icon" aria-hidden="true">⌁</span>
+            <span>Problem Reports</span>
+            <span class="nav-count amber" id="nav-report-count">0</span>
+          </button>
+        </nav>
+
+        <div class="sidebar-bottom">
+          <div class="rule-card">
+            <div class="rule-title"><span class="rule-dot"></span> Rule-based detection</div>
+            <p>Empty room drawing over 0.2 kW for 2 readings raises an alert.</p>
+          </div>
+          <button class="reset-button" type="button" id="reset-day">↻ <span>Reset simulator day</span></button>
+        </div>
+      </aside>
+
+      <main class="main-shell">
+        <header class="topbar">
+          <button class="mobile-menu" type="button" id="mobile-menu" aria-label="Open navigation">☰</button>
+          <div class="page-heading">
+            <div class="heading-line">
+              <h1 id="page-title">Energy Waste Overview</h1>
+              <span class="status-pill clean" id="header-status">All clean</span>
+            </div>
+            <p id="page-subtitle">Detecting empty rooms where lights, AC or projectors were left running.</p>
+          </div>
+          <div class="topbar-stats">
+            <div class="topbar-rate"><span>Rate</span><strong>₹8 / kWh</strong></div>
+            <div class="live-load"><span class="live-zap">ϟ</span><strong id="top-live-load">0.00 kW</strong><time id="clock">--:--:--</time><span class="live-dot"></span></div>
+            <span class="backend-pill checking" id="backend-status"><span></span> Connecting</span>
+          </div>
+        </header>
+
+        <div class="content">
+          <section class="view active" data-page="dashboard" id="view-dashboard">
+            <div class="how-grid">
+              <article class="how-card">
+                <span class="step-number">01</span><span class="how-icon green">ϟ</span>
+                <div><h2>Sense</h2><p>Each room streams power, occupancy and appliance state.</p></div>
+              </article>
+              <article class="how-card">
+                <span class="step-number">02</span><span class="how-icon amber">⌕</span>
+                <div><h2>Detect</h2><p>Empty rooms over 0.2 kW for two readings become urgent problems.</p></div>
+              </article>
+              <article class="how-card">
+                <span class="step-number">03</span><span class="how-icon blue">✦</span>
+                <div><h2>Save</h2><p>Mark a problem fixed to switch off the room and remove it from the queue.</p></div>
+              </article>
+            </div>
+
+            <div class="kpi-grid">
+              <article class="kpi-card"><div class="kpi-top"><span>Live load</span><span class="kpi-icon blue">ϟ</span></div><strong id="kpi-live">0.00 kW</strong><small id="kpi-tick">Reading #0 · refreshes every 5s</small></article>
+              <article class="kpi-card"><div class="kpi-top"><span>Used today</span><span class="kpi-icon amber">▥</span></div><strong id="kpi-used">0.00 kWh</strong><small>All rooms · lights, fans, AC, projectors</small></article>
+              <article class="kpi-card"><div class="kpi-top"><span>Energy wasted</span><span class="kpi-icon rose">₹</span></div><strong id="kpi-wasted">₹0.00</strong><small id="kpi-wasted-note">0.000 kWh wasted at ₹8/unit</small></article>
+              <article class="kpi-card"><div class="kpi-top"><span>CO₂ emitted</span><span class="kpi-icon green">♧</span></div><strong id="kpi-co2">0.00 kg</strong><small id="kpi-co2-note">≈0.00 trees · 0 phone charges</small></article>
+            </div>
+
+            <section class="panel">
+              <div class="panel-heading">
+                <div><h2>Live power — all rooms</h2><p>Power draw over time. A spike in an empty room means energy is being wasted.</p></div>
+                <span class="streaming"><span class="live-dot"></span> STREAMING</span>
+              </div>
+              <div class="chart-wrap"><canvas id="power-chart" aria-label="Live power chart for all rooms"></canvas></div>
+              <div class="chart-legend" id="chart-legend"></div>
+            </section>
+
+            <div class="dashboard-columns">
+              <section class="panel">
+                <div class="panel-heading">
+                  <div><h2>Urgency leaderboard <span class="inline-count" id="dashboard-alert-count">0</span></h2><p>Every active energy problem, ranked by power draw, time active and kWh wasted.</p></div>
+                  <button class="text-button" type="button" data-view="alerts">View all</button>
+                </div>
+                <div class="problem-list" id="dashboard-urgent-list"></div>
+              </section>
+              <section class="panel demo-panel">
+                <div class="panel-heading"><div><h2>Try it live</h2><p>Reproduce a waste event for the demo.</p></div></div>
+                <button class="button danger full-width" type="button" id="demo-waste">⚠ <span>Create a waste alert</span></button>
+                <div class="button-row">
+                  <button class="button outline" type="button" id="empty-all">Empty all rooms</button>
+                  <button class="button success" type="button" id="fill-all">Fill all rooms</button>
+                </div>
+                <div class="button-row">
+                  <button class="button speed active" type="button" data-speed="5000">Normal · 5s</button>
+                  <button class="button speed" type="button" data-speed="1000">Turbo · 1s</button>
+                </div>
+                <p class="help-note">An alert appears after two readings when an empty room keeps drawing power.</p>
+              </section>
+            </div>
+
+            <section class="panel">
+              <div class="panel-heading"><div><h2>All rooms</h2><p>Green means occupied · red means wasting · grey means empty and efficient.</p></div><button class="text-button" type="button" data-view="rooms">Control rooms</button></div>
+              <div class="room-grid compact" id="dashboard-room-grid"></div>
+            </section>
+          </section>
+
+          <section class="view" data-page="alerts" id="view-alerts" hidden>
+            <div class="section-intro"><div><span class="eyebrow">LIVE QUEUE</span><h2>Urgent energy problems</h2><p>Active waste alerts are stored by the FastAPI backend and removed when fixed.</p></div><div class="stat-chip"><strong id="alerts-count">0</strong><span>active now</span></div></div>
+            <section class="panel"><div class="panel-heading"><div><h2>Ranked by urgency</h2><p>Power draw, time left running and accumulated waste determine priority.</p></div></div><div class="problem-list" id="alerts-list"></div></section>
+          </section>
+
+          <section class="view" data-page="rooms" id="view-rooms" hidden>
+            <div class="section-intro"><div><span class="eyebrow">CAMPUS SIMULATOR</span><h2>Control each room</h2><p>Change occupancy and appliances to see how energy waste is detected.</p></div><div class="stat-chip"><strong id="rooms-count">8</strong><span>monitored rooms</span></div></div>
+            <div class="notice"><strong>To trigger an alert:</strong> choose an occupied room with appliances on, then set it to empty. A waste problem appears after two readings.</div>
+            <div class="room-grid" id="rooms-page-grid"></div>
+          </section>
+
+          <section class="view" data-page="impact" id="view-impact" hidden>
+            <div class="section-intro"><div><span class="eyebrow">CAMPUS FOOTPRINT</span><h2>Savings & impact</h2><p>Translate wasted energy into money, carbon and everyday equivalents.</p></div></div>
+            <div class="impact-grid">
+              <article class="impact-card"><span class="kpi-icon blue">ϟ</span><small>Energy lost</small><strong id="impact-energy">0.00 kWh</strong><span id="impact-phones">≈ 0 phone charges</span></article>
+              <article class="impact-card"><span class="kpi-icon rose">₹</span><small>Money burned</small><strong id="impact-cost">₹0.00</strong><span>at ₹8 per unit</span></article>
+              <article class="impact-card"><span class="kpi-icon amber">♧</span><small>CO₂ emitted</small><strong id="impact-co2">0.00 kg</strong><span>at 0.82 kg per unit</span></article>
+              <article class="impact-card"><span class="kpi-icon green">♧</span><small>Trees to offset</small><strong id="impact-trees">0.00</strong><span>one tree absorbs ~21 kg/year</span></article>
+            </div>
+            <section class="panel"><div class="panel-heading"><div><h2>Efficiency leaderboard</h2><p>Rooms ranked by least wasted energy. Fix waste to climb the board.</p></div></div><div class="table-scroll"><table class="data-table"><thead><tr><th>#</th><th>Room</th><th class="numeric">Wasted</th><th class="numeric">Efficiency score</th></tr></thead><tbody id="efficiency-rows"></tbody></table></div></section>
+            <section class="projection" id="projection"></section>
+            <p class="formula-note">Formulas: cost = kWh × ₹8 · CO₂ = kWh × 0.82 kg · trees = CO₂ ÷ 21 · phones = kWh × 80 · detection = empty + &gt;0.2 kW for 2 readings.</p>
+          </section>
+
+          <section class="view" data-page="reports" id="view-reports" hidden>
+            <div class="section-intro"><div><span class="eyebrow">FACILITIES WORK QUEUE</span><h2>Room problem reports</h2><p>Report faults such as broken AC, flickering lights or a dead projector. Reports persist in SQLite.</p></div><div class="stat-chip"><strong id="reports-count">0</strong><span>unresolved</span></div></div>
+            <div class="notice"><strong>Use this for equipment faults.</strong> Empty rooms with appliances left running appear automatically in the Urgent Problems queue.</div>
+            <div class="report-layout">
+              <form class="panel report-form" id="problem-form">
+                <div class="panel-heading"><div><h2>Raise a report</h2><p>Tell the facilities team what needs attention.</p></div></div>
+                <label>Reporter name<input id="reporter-name" name="reporter_name" maxlength="100" required value="Demo Student" /></label>
+                <label>Room<select id="report-room" name="room_id" required></select></label>
+                <label>Problem type<select id="report-category" name="category" required></select></label>
+                <label>Describe the problem<textarea id="report-description" name="description" rows="4" minlength="5" maxlength="2000" placeholder="e.g. AC in LH-2 stays on after the room is empty..." required></textarea></label>
+                <button class="button success full-width" type="submit">＋ Raise problem report</button>
+                <p class="form-footnote">Resolved reports are deleted from the backend and disappear from this queue.</p>
+              </form>
+              <section class="panel reports-panel">
+                <div class="panel-heading report-heading"><div><h2>Track reports</h2><p>Open → In progress → resolved and deleted.</p></div><div class="filter-group"><button class="filter-button active" type="button" data-report-filter="all">All</button><button class="filter-button" type="button" data-report-filter="mine">Mine</button></div></div>
+                <div class="problem-list" id="maintenance-list"></div>
+              </section>
+            </div>
+          </section>
+        </div>
+
+        <footer class="footer">
+          <span><strong>WattWatch</strong> · Campus energy waste detection</span>
+          <span>Readings every 5s · ₹8/kWh · 0.82 kg CO₂/kWh</span>
+        </footer>
+      </main>
+    </div>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <div class="mobile-scrim" id="mobile-scrim"></div>
+    <script src="/app.js" defer></script>
   </body>
 </html>
