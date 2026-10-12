@@ -1,5 +1,6 @@
 import { AlertTriangle, Building2, CheckCircle2 } from 'lucide-react';
 import AlertList from '../components/AlertList';
+import UrgencyLeaderboard from '../components/UrgencyLeaderboard';
 import { Hint, Panel } from '../components/ui';
 import { co2Kg, costRs } from '../lib/calculations';
 import { useEnergy } from '../lib/store';
@@ -33,15 +34,15 @@ export default function Alerts() {
       </div>
 
       <Panel
-        title={`Wasting now — needs action (${activeAlerts.length})`}
-        subtitle="Each card is an empty room with appliances left on. The kWh counter grows every 5 seconds."
+        title={`Urgency leaderboard — wasting now (${activeAlerts.length})`}
+        subtitle="Active alerts are ranked by current power draw, time left running, and energy already wasted."
       >
         <Hint>
           Press <span className="font-bold text-emerald-700">“Mark Fixed”</span> to cut power to that
           room (drops to 0.02 kW standby) and move the alert to history.
         </Hint>
         <div className="mt-4">
-          <AlertList alerts={activeAlerts} emptyText="Nothing wasting right now — all empty rooms are off." />
+          <UrgencyLeaderboard emptyText="Nothing wasting right now — all empty rooms are off." />
         </div>
       </Panel>
 

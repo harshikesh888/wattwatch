@@ -1,9 +1,9 @@
 import { AlertTriangle, FlaskConical, IndianRupee, Leaf, PlugZap, Zap } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import AlertList from '../components/AlertList';
 import KpiCard from '../components/KpiCard';
 import LiveChart from '../components/LiveChart';
 import RoomCard from '../components/RoomCard';
+import UrgencyLeaderboard from '../components/UrgencyLeaderboard';
 import { Hint, Panel, Step } from '../components/ui';
 import { useToast } from '../lib/toast';
 import { useEnergy } from '../lib/store';
@@ -92,11 +92,11 @@ export default function Dashboard() {
 
       <div className="grid gap-6 lg:grid-cols-3">
         <Panel
-          title={`Needs attention (${activeAlerts.length})`}
-          subtitle="Empty rooms burning power. Mark one fixed to switch it off."
+          title={`Urgency leaderboard (${activeAlerts.length})`}
+          subtitle="Active waste ranked by power draw, time left running, and energy already wasted."
           className="lg:col-span-2"
         >
-          <AlertList alerts={activeAlerts} compact emptyText="All clear — every empty room is switched off." />
+          <UrgencyLeaderboard emptyText="All clear — every empty room is switched off." />
         </Panel>
         <Panel title="Try it live" subtitle="Reproduce a waste event for the demo in under 15 seconds.">
           <div className="flex flex-col gap-2">
