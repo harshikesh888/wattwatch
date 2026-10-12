@@ -8,11 +8,11 @@ export default function Rooms() {
   const { rooms, live, readings, roomStatus, toggleOccupied, toggleAppliance } = useEnergy();
 
   return (
-    <div className="page-enter flex flex-col gap-4">
+    <div className="page-enter flex flex-col gap-6">
       <Panel title="Control each room" subtitle="Simulate the campus: flip occupancy, switch appliances, and watch detection react.">
         <Hint>
-          <span className="font-semibold text-slate-100">To trigger an alert:</span> pick an occupied room,
-          leave its appliances ON, and press <span className="font-semibold text-amber-200">“Set room to Empty”</span>.
+          <span className="font-semibold text-slate-800">To trigger an alert:</span> pick an occupied room,
+          leave its appliances ON, and press <span className="font-semibold text-amber-800">“Set room to Empty”</span>.
           A waste alert fires within 2 readings (~10s).
         </Hint>
       </Panel>
@@ -25,17 +25,19 @@ export default function Rooms() {
           return (
             <div
               key={room.id}
-              className={`rounded-2xl border p-4 shadow-xl shadow-black/30 ${status === 'wasting' ? 'border-red-500/70 bg-red-950/20 waste-pulse' : 'border-slate-800 bg-slate-900/70'}`}
+              className={`rounded-2xl border bg-white p-5 shadow-xs ${
+                status === 'wasting' ? 'border-rose-300 waste-pulse' : 'border-slate-200/90'
+              }`}
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
-                  <span className="font-mono text-lg font-black text-slate-50">{room.name}</span>
-                  <span className="ml-2 text-[11px] uppercase tracking-wider text-slate-500">
+                  <span className="font-mono text-lg font-extrabold text-slate-900">{room.name}</span>
+                  <span className="ml-2 text-[11px] uppercase tracking-wide text-slate-400">
                     {room.type} · {room.capacity} seats
                   </span>
                 </div>
-                <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-300">
-                  <span className={s.occupied ? 'font-semibold text-emerald-300' : 'text-slate-400'}>
+                <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-600">
+                  <span className={s.occupied ? 'font-semibold text-emerald-700' : 'text-slate-400'}>
                     {s.occupied ? 'Occupied' : 'Empty'}
                   </span>
                   <button
@@ -44,10 +46,10 @@ export default function Rooms() {
                     aria-checked={s.occupied}
                     aria-label={`Toggle occupancy for ${room.name}`}
                     onClick={() => toggleOccupied(room.id)}
-                    className={`relative h-6 w-11 rounded-full transition-colors ${s.occupied ? 'bg-emerald-500' : 'bg-slate-700'}`}
+                    className={`relative h-6 w-11 rounded-full transition-colors ${s.occupied ? 'bg-emerald-500' : 'bg-slate-300'}`}
                   >
                     <span
-                      className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-all ${s.occupied ? 'left-[22px]' : 'left-0.5'}`}
+                      className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${s.occupied ? 'left-[22px]' : 'left-0.5'}`}
                     />
                   </button>
                 </label>
@@ -59,10 +61,10 @@ export default function Rooms() {
                     <Area
                       type="monotone"
                       dataKey="p"
-                      stroke={status === 'wasting' ? '#f87171' : '#22d3ee'}
-                      fill={status === 'wasting' ? '#f87171' : '#22d3ee'}
-                      fillOpacity={0.2}
-                      strokeWidth={1.6}
+                      stroke={status === 'wasting' ? '#f43f5e' : '#059669'}
+                      fill={status === 'wasting' ? '#f43f5e' : '#059669'}
+                      fillOpacity={0.15}
+                      strokeWidth={1.8}
                       dot={false}
                       isAnimationActive={false}
                     />
@@ -71,17 +73,17 @@ export default function Rooms() {
               </div>
 
               <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
-                <span className="font-mono text-xl font-black tabular-nums text-slate-50">
+                <span className="font-mono text-xl font-black tabular-nums text-slate-900">
                   {s.power_kW.toFixed(2)} kW
                 </span>
-                <span className="text-xs text-slate-400">right now</span>
-                <span className="font-mono text-[11px] tabular-nums text-slate-500">
-                  {s.todayKWh.toFixed(2)} kWh today · &#8377;{costRs(s.todayKWh).toFixed(2)} ·{' '}
-                  {co2Kg(s.todayKWh).toFixed(2)} kg CO&#8322;
+                <span className="text-xs text-slate-500">right now</span>
+                <span className="font-mono text-[11px] tabular-nums text-slate-400">
+                  {s.todayKWh.toFixed(2)} kWh today · ₹{costRs(s.todayKWh).toFixed(2)} ·{' '}
+                  {co2Kg(s.todayKWh).toFixed(2)} kg CO₂
                 </span>
               </div>
 
-              <div className="mb-1 mt-3 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+              <div className="mb-1.5 mt-3 text-[11px] font-bold uppercase tracking-wider text-slate-500">
                 Appliances — tap to switch on/off
               </div>
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -95,11 +97,11 @@ export default function Rooms() {
                       onClick={() => toggleAppliance(room.id, k)}
                       className={`rounded-xl border px-2 py-2 text-xs font-bold transition-colors ${
                         on
-                          ? 'border-amber-400/60 bg-amber-400/15 text-amber-100'
-                          : 'border-slate-700 bg-slate-800/60 text-slate-400 hover:bg-slate-800'
+                          ? 'border-amber-300 bg-amber-50 text-amber-800'
+                          : 'border-slate-200 bg-white text-slate-400 hover:bg-slate-50'
                       }`}
                     >
-                      <span className={`mb-0.5 inline-block rounded px-1.5 py-px font-mono text-[10px] font-black ${on ? 'bg-amber-400/25 text-amber-200' : 'bg-slate-700/60 text-slate-400'}`}>
+                      <span className={`mb-0.5 inline-block rounded px-1.5 py-px font-mono text-[10px] font-black ${on ? 'bg-amber-200/60 text-amber-800' : 'bg-slate-100 text-slate-400'}`}>
                         {on ? 'ON' : 'OFF'}
                       </span>
                       <span className="block">{APPLIANCE_LABELS[k]}</span>
