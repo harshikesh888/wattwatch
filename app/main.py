@@ -7,6 +7,9 @@ import json
 import os
 import secrets
 import sqlite3
+import time
+import urllib.parse
+import urllib.request
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -24,8 +27,10 @@ PUBLIC_DIR = BASE_DIR / "public"
 DB_PATH = Path(os.environ.get("WATTWATCH_DB_PATH", BASE_DIR / "data" / "wattwatch.sqlite3"))
 SECRET_FILE = BASE_DIR / "data" / ".secret.key"
 
-ProblemKind = Literal["maintenance", "energy_waste"]
+ProblemKind = Literal["maintenance", "energy_waste", "water_waste", "material_waste"]
 ProblemStatus = Literal["open", "in-progress"]
+MaterialType = Literal["plastic", "paper", "ewaste", "glass", "organic", "other"]
+MaterialAction = Literal["disposed", "recycled", "reused"]
 
 TOKEN_TTL_HOURS = int(os.environ.get("WATTWATCH_TOKEN_TTL_HOURS", "168"))  # 7 days
 DEMO_EMAIL = "demo@wattwatch.local"
@@ -71,6 +76,12 @@ class ProblemCreate(BaseModel):
     status: ProblemStatus = "open"
     power_kw: float = Field(default=0, ge=0, le=1000)
     wasted_kwh: float = Field(default=0, ge=0, le=1_000_000)
+    flow_lpm: float = Field(default=0, ge=0, le=1000)
+    wasted_litres: float = Field(default=0, ge=0, le=10_000_000)
+    reused_litres: float = Field(default=0, ge=0, le=10_000_000)
+    material: str = Field(default="", max_length=32)
+    quantity: float = Field(default=0, ge=0, le=1_000_000)
+    action: str = Field(default="", max_length=32)
 
 
 class ProblemUpdate(BaseModel):
@@ -80,6 +91,24 @@ class ProblemUpdate(BaseModel):
     description: str | None = Field(default=None, min_length=1, max_length=2000)
     power_kw: float | None = Field(default=None, ge=0, le=1000)
     wasted_kwh: float | None = Field(default=None, ge=0, le=1_000_000)
+    flow_lpm: float | None = Field(default=None, ge=0, le=1000)
+    wasted_litres: float | None = Field(default=None, ge=0, le=10_000_000)
+    reused_litres: float | None = Field(default=None, ge=0, le=10_000_000)
+    quantity: float | None = Field(default=None, ge=0, le=1_000_000)
+    action: str | None = Field(default=None, min_length=1, max_length=32)
+
+
+class MaterialLogCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    room_id: str = Field(min_length=1, max_length=32)
+    room_name: str = Field(min_length=1, max_length=80)
+    material: MaterialType = "plastic"
+    quantity: float = Field(default=1, ge=0.01, le=1_000_000)
+    unit: str = Field(default="pcs", max_length=16)
+    action: MaterialAction = "recycled"
+    reporter_name: str = Field(default="Facility team", min_length=1, max_length=100)
+    note: str = Field(default="", max_length=500)
 
 
 class UserRegister(BaseModel):
@@ -126,7 +155,17 @@ def connect_db() -> sqlite3.Connection:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     connection = sqlite3.connect(DB_PATH, timeout=10)
     connection.row_factory = sqlite3.Row
+    try:
+        connection.execute("PRAGMA journal_mode=WAL;")
+    except Exception:
+        pass
     return connection
+
+
+def _ensure_column(db: sqlite3.Connection, table: str, column: str, ddl: str) -> None:
+    cols = {row["name"] for row in db.execute(f"PRAGMA table_info({table})").fetchall()}
+    if column not in cols:
+        db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
 
 
 def initialize_database() -> None:
@@ -135,7 +174,7 @@ def initialize_database() -> None:
             """
             CREATE TABLE IF NOT EXISTS problems (
                 id TEXT PRIMARY KEY,
-                kind TEXT NOT NULL CHECK (kind IN ('maintenance', 'energy_waste')),
+                kind TEXT NOT NULL,
                 room_id TEXT NOT NULL,
                 room_name TEXT NOT NULL,
                 category TEXT NOT NULL,
@@ -144,11 +183,27 @@ def initialize_database() -> None:
                 status TEXT NOT NULL CHECK (status IN ('open', 'in-progress')),
                 power_kw REAL NOT NULL DEFAULT 0,
                 wasted_kwh REAL NOT NULL DEFAULT 0,
+                flow_lpm REAL NOT NULL DEFAULT 0,
+                wasted_litres REAL NOT NULL DEFAULT 0,
+                reused_litres REAL NOT NULL DEFAULT 0,
+                material TEXT NOT NULL DEFAULT '',
+                quantity REAL NOT NULL DEFAULT 0,
+                action TEXT NOT NULL DEFAULT '',
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL
             )
             """
         )
+        # Migrate older DBs that only had energy fields.
+        for col, ddl in [
+            ("flow_lpm", "REAL NOT NULL DEFAULT 0"),
+            ("wasted_litres", "REAL NOT NULL DEFAULT 0"),
+            ("reused_litres", "REAL NOT NULL DEFAULT 0"),
+            ("material", "TEXT NOT NULL DEFAULT ''"),
+            ("quantity", "REAL NOT NULL DEFAULT 0"),
+            ("action", "TEXT NOT NULL DEFAULT ''"),
+        ]:
+            _ensure_column(db, "problems", col, ddl)
         db.execute(
             """
             CREATE UNIQUE INDEX IF NOT EXISTS one_active_energy_problem_per_room
@@ -156,7 +211,16 @@ def initialize_database() -> None:
             """
         )
         db.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS one_active_water_problem_per_room
+            ON problems(room_id) WHERE kind = 'water_waste'
+            """
+        )
+        db.execute(
             "CREATE INDEX IF NOT EXISTS problems_created_at ON problems(created_at DESC)"
+        )
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS problems_kind ON problems(kind)"
         )
         db.execute(
             """
@@ -172,10 +236,35 @@ def initialize_database() -> None:
         db.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS users_email_unique ON users(email)"
         )
+        db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS material_logs (
+                id TEXT PRIMARY KEY,
+                room_id TEXT NOT NULL,
+                room_name TEXT NOT NULL,
+                material TEXT NOT NULL,
+                quantity REAL NOT NULL DEFAULT 1,
+                unit TEXT NOT NULL DEFAULT 'pcs',
+                action TEXT NOT NULL CHECK (action IN ('disposed','recycled','reused')),
+                reporter_name TEXT NOT NULL DEFAULT '',
+                note TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL
+            )
+            """
+        )
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS material_logs_created_at ON material_logs(created_at DESC)"
+        )
     seed_demo_user()
 
 
 def problem_dict(row: sqlite3.Row) -> dict[str, object]:
+    def get(name: str, default: object = 0) -> object:
+        try:
+            value = row[name]
+            return default if value is None else value
+        except (KeyError, IndexError):
+            return default
     return {
         "id": row["id"],
         "kind": row["kind"],
@@ -185,10 +274,31 @@ def problem_dict(row: sqlite3.Row) -> dict[str, object]:
         "description": row["description"],
         "reporter_name": row["reporter_name"],
         "status": row["status"],
-        "power_kw": row["power_kw"],
-        "wasted_kwh": row["wasted_kwh"],
+        "power_kw": get("power_kw", 0),
+        "wasted_kwh": get("wasted_kwh", 0),
+        "flow_lpm": get("flow_lpm", 0),
+        "wasted_litres": get("wasted_litres", 0),
+        "reused_litres": get("reused_litres", 0),
+        "material": get("material", ""),
+        "quantity": get("quantity", 0),
+        "action": get("action", ""),
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
+    }
+
+
+def material_dict(row: sqlite3.Row) -> dict[str, object]:
+    return {
+        "id": row["id"],
+        "room_id": row["room_id"],
+        "room_name": row["room_name"],
+        "material": row["material"],
+        "quantity": row["quantity"],
+        "unit": row["unit"],
+        "action": row["action"],
+        "reporter_name": row["reporter_name"],
+        "note": row["note"],
+        "created_at": row["created_at"],
     }
 
 
@@ -329,7 +439,7 @@ async def lifespan(_: FastAPI):
     yield
 
 
-app = FastAPI(title="WattWatch API", version="2.0.0", lifespan=lifespan)
+app = FastAPI(title="WattWatch API", version="3.0.0", lifespan=lifespan)
 
 
 # ---------------------------------------------------------------------------
@@ -419,13 +529,14 @@ def create_problem(_user: CurrentUser, problem: ProblemCreate) -> dict[str, obje
     now = utc_now()
     problem_id = str(uuid4())
     with connect_db() as db:
-        if problem.kind == "energy_waste":
+        if problem.kind in ("energy_waste", "water_waste"):
             db.execute(
                 """
                 INSERT OR IGNORE INTO problems
                     (id, kind, room_id, room_name, category, description, reporter_name,
-                     status, power_kw, wasted_kwh, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     status, power_kw, wasted_kwh, flow_lpm, wasted_litres, reused_litres,
+                     material, quantity, action, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     problem_id,
@@ -438,6 +549,12 @@ def create_problem(_user: CurrentUser, problem: ProblemCreate) -> dict[str, obje
                     problem.status,
                     problem.power_kw,
                     problem.wasted_kwh,
+                    problem.flow_lpm,
+                    problem.wasted_litres,
+                    problem.reused_litres,
+                    problem.material,
+                    problem.quantity,
+                    problem.action,
                     now,
                     now,
                 ),
@@ -451,8 +568,9 @@ def create_problem(_user: CurrentUser, problem: ProblemCreate) -> dict[str, obje
                 """
                 INSERT INTO problems
                     (id, kind, room_id, room_name, category, description, reporter_name,
-                     status, power_kw, wasted_kwh, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                     status, power_kw, wasted_kwh, flow_lpm, wasted_litres, reused_litres,
+                     material, quantity, action, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     problem_id,
@@ -465,6 +583,12 @@ def create_problem(_user: CurrentUser, problem: ProblemCreate) -> dict[str, obje
                     problem.status,
                     problem.power_kw,
                     problem.wasted_kwh,
+                    problem.flow_lpm,
+                    problem.wasted_litres,
+                    problem.reused_litres,
+                    problem.material,
+                    problem.quantity,
+                    problem.action,
                     now,
                     now,
                 ),
@@ -493,7 +617,8 @@ def update_problem(
             db.execute("DELETE FROM problems WHERE id = ?", (problem_id,))
             return {"id": problem_id, "deleted": True}
 
-        allowed = {"status", "description", "power_kw", "wasted_kwh"}
+        allowed = {"status", "description", "power_kw", "wasted_kwh", "flow_lpm",
+                   "wasted_litres", "reused_litres", "quantity", "action"}
         values = {key: value for key, value in changes.items() if key in allowed}
         if values:
             values["updated_at"] = utc_now()
@@ -515,6 +640,163 @@ def delete_problem(problem_id: str, _user: CurrentUser) -> Response:
     if cursor.rowcount == 0:
         raise HTTPException(status_code=404, detail="Problem not found.")
     return Response(status_code=204)
+
+
+# ---------------------------------------------------------------------------
+# Weather API (Open-Meteo proxy with cache + offline fallback for demos)
+# ---------------------------------------------------------------------------
+
+_WEATHER_CACHE: dict[str, object] = {"at": 0.0, "payload": None}
+WEATHER_TTL_S = 600
+CAMPUS_LAT = float(os.environ.get("WATTWATCH_LAT", "22.725278"))
+CAMPUS_LON = float(os.environ.get("WATTWATCH_LON", "75.865556"))
+CAMPUS_NAME = os.environ.get("WATTWATCH_CAMPUS", "SVVV Indore")
+
+
+def _fetch_weather_live(lat: float, lon: float) -> dict[str, object] | None:
+    try:
+        qs = urllib.parse.urlencode({
+            "latitude": lat, "longitude": lon,
+            "current": "temperature_2m,relative_humidity_2m,apparent_temperature,weather_code",
+            "timezone": "auto",
+        })
+        req = urllib.request.Request(
+            f"https://api.open-meteo.com/v1/forecast?{qs}",
+            headers={"User-Agent": "WattWatch-hackathon/1.0"},
+        )
+        with urllib.request.urlopen(req, timeout=6) as resp:
+            body = json.loads(resp.read().decode("utf-8"))
+        cur = body.get("current", {})
+        code = int(cur.get("weather_code", 0))
+        desc = {0: "Clear sky", 1: "Mainly clear", 2: "Partly cloudy", 3: "Overcast",
+                45: "Fog", 48: "Icing fog", 51: "Light drizzle", 61: "Light rain",
+                71: "Light snow", 80: "Rain showers", 95: "Thunderstorm"}.get(code, f"Code {code}")
+        temp = float(cur.get("temperature_2m", 30))
+        return {
+            "temperature_c": temp,
+            "humidity_pct": cur.get("relative_humidity_2m"),
+            "apparent_c": cur.get("apparent_temperature"),
+            "condition": desc,
+            "weather_code": code,
+            "cooling_demand": "high" if temp >= 32 else ("moderate" if temp >= 27 else "low"),
+            "live": True,
+        }
+    except Exception:
+        return None
+
+
+@app.get("/api/weather")
+def get_weather(
+    _user: CurrentUser,
+    lat: float | None = None,
+    lon: float | None = None,
+) -> dict[str, object]:
+    now_ts = time.time()
+    cached_at = float(_WEATHER_CACHE.get("at", 0.0) or 0.0)
+    if _WEATHER_CACHE.get("payload") and (now_ts - cached_at) < WEATHER_TTL_S and lat is None:
+        payload = dict(_WEATHER_CACHE["payload"])  # type: ignore
+        payload["cached"] = True
+        return payload
+    use_lat = CAMPUS_LAT if lat is None else lat
+    use_lon = CAMPUS_LON if lon is None else lon
+    live = _fetch_weather_live(use_lat, use_lon)
+    if live is not None:
+        payload: dict[str, object] = {
+            "campus": CAMPUS_NAME, "lat": use_lat, "lon": use_lon,
+            **live, "cached": False, "source": "open-meteo",
+            "fetched_at": utc_now(),
+        }
+        if lat is None:
+            _WEATHER_CACHE["at"] = now_ts
+            _WEATHER_CACHE["payload"] = payload
+        return payload
+    # Offline fallback so the demo never breaks on hackathon Wi-Fi.
+    if _WEATHER_CACHE.get("payload"):
+        payload = dict(_WEATHER_CACHE["payload"])  # type: ignore
+        payload["cached"] = True
+        return payload
+    return {
+        "campus": CAMPUS_NAME, "lat": use_lat, "lon": use_lon,
+        "temperature_c": 33.0, "humidity_pct": 48, "apparent_c": 35.0,
+        "condition": "Hot (offline estimate)", "weather_code": 1,
+        "cooling_demand": "high", "live": False, "cached": False,
+        "source": "fallback", "fetched_at": utc_now(),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Materials API — reuse / recycle logs (plastic, paper, e-waste...)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/materials")
+def list_materials(_user: CurrentUser, limit: int = Query(default=100, ge=1, le=500)) -> dict[str, object]:
+    with connect_db() as db:
+        rows = db.execute(
+            "SELECT * FROM material_logs ORDER BY created_at DESC, rowid DESC LIMIT ?", (limit,)
+        ).fetchall()
+    items = [material_dict(r) for r in rows]
+    return {"items": items, "count": len(items)}
+
+
+@app.post("/api/materials", status_code=201)
+def create_material_log(_user: CurrentUser, payload: MaterialLogCreate) -> dict[str, object]:
+    now = utc_now()
+    log_id = str(uuid4())
+    with connect_db() as db:
+        db.execute(
+            """INSERT INTO material_logs
+               (id, room_id, room_name, material, quantity, unit, action, reporter_name, note, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (log_id, payload.room_id, payload.room_name, payload.material, payload.quantity,
+             payload.unit, payload.action, payload.reporter_name.strip() or "Facility team",
+             payload.note.strip(), now),
+        )
+        row = db.execute("SELECT * FROM material_logs WHERE id = ?", (log_id,)).fetchone()
+    if row is None:
+        raise HTTPException(status_code=500, detail="Log could not be stored.")
+    return material_dict(row)
+
+
+@app.delete("/api/materials/{log_id}", status_code=204)
+def delete_material_log(log_id: str, _user: CurrentUser) -> Response:
+    with connect_db() as db:
+        cursor = db.execute("DELETE FROM material_logs WHERE id = ?", (log_id,))
+    if cursor.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Log not found.")
+    return Response(status_code=204)
+
+
+@app.get("/api/materials/stats")
+def material_stats(_user: CurrentUser) -> dict[str, object]:
+    with connect_db() as db:
+        rows = db.execute("SELECT material, action, SUM(quantity) AS qty FROM material_logs GROUP BY material, action").fetchall()
+        recent = db.execute("SELECT * FROM material_logs ORDER BY created_at DESC LIMIT 5").fetchall()
+    by_material: dict[str, dict[str, float]] = {}
+    totals = {"disposed": 0.0, "recycled": 0.0, "reused": 0.0}
+    for r in rows:
+        mat = str(r["material"])
+        act = str(r["action"])
+        qty = float(r["qty"] or 0)
+        by_material.setdefault(mat, {"disposed": 0.0, "recycled": 0.0, "reused": 0.0})
+        if act in by_material[mat]:
+            by_material[mat][act] += qty
+        if act in totals:
+            totals[act] += qty
+    diverted = totals["recycled"] + totals["reused"]
+    total_all = diverted + totals["disposed"]
+    diversion_rate = (diverted / total_all * 100) if total_all > 0 else 0.0
+    # Rough impact factors for the pitch.
+    plastic_qty = sum(v for k, v in by_material.get("plastic", {}).items() if k in ("recycled", "reused") for v in [v]) if "plastic" in by_material else 0.0
+    return {
+        "by_material": by_material,
+        "totals": totals,
+        "total_items": total_all,
+        "diverted_items": diverted,
+        "diversion_rate_pct": round(diversion_rate, 1),
+        "plastic_diverted_pcs": by_material.get("plastic", {}).get("recycled", 0) + by_material.get("plastic", {}).get("reused", 0),
+        "plastic_co2_avoided_kg": round(plastic_qty * 0.082, 3),
+        "recent": [material_dict(r) for r in recent],
+    }
 
 
 @app.get("/", include_in_schema=False)

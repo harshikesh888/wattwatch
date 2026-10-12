@@ -73,6 +73,15 @@
             <span>Urgent Problems</span>
             <span class="nav-count rose" id="nav-alert-count">0</span>
           </button>
+          <button class="nav-link" type="button" data-view="water">
+            <span class="nav-icon" aria-hidden="true">≋</span>
+            <span>Water & Reuse</span>
+            <span class="nav-count rose" id="nav-water-count">0</span>
+          </button>
+          <button class="nav-link" type="button" data-view="materials">
+            <span class="nav-icon" aria-hidden="true">♻</span>
+            <span>Materials</span>
+          </button>
           <button class="nav-link" type="button" data-view="rooms">
             <span class="nav-icon" aria-hidden="true">▤</span>
             <span>Campus Rooms</span>
@@ -95,7 +104,7 @@
           </div>
           <div class="rule-card">
             <div class="rule-title"><span class="rule-dot"></span> Rule-based detection</div>
-            <p>Empty room drawing over 0.2 kW for 2 readings raises an alert.</p>
+            <p>Energy: empty + &gt;0.2 kW ×2 readings. Water: empty + &gt;0.5 L/min ×2 or leak.</p>
           </div>
           <button class="reset-button" type="button" id="reset-day">↻ <span>Reset simulator day</span></button>
           <button class="reset-button logout" type="button" id="sidebar-logout">⏻ <span>Log out</span></button>
@@ -114,7 +123,8 @@
           </div>
           <div class="topbar-stats">
             <div class="topbar-rate"><span>Rate</span><strong>₹8 / kWh</strong></div>
-            <div class="live-load"><span class="live-zap">ϟ</span><strong id="top-live-load">0.00 kW</strong><time id="clock">--:--:--</time><span class="live-dot"></span></div>
+            <div class="topbar-rate" id="weather-pill" title="Campus weather from Open-Meteo"><span id="weather-icon">⛅</span><strong id="weather-text">--°C · --%</strong></div>
+            <div class="live-load"><span class="live-zap">ϟ</span><strong id="top-live-load">0.00 kW</strong><strong id="top-live-water" title="Total water flow">0.0 L/min</strong><time id="clock">--:--:--</time><span class="live-dot"></span></div>
             <span class="backend-pill checking" id="backend-status"><span></span> Connecting</span>
             <div class="user-chip" id="user-chip" hidden>
               <span class="user-avatar" id="user-avatar">D</span>
@@ -129,23 +139,42 @@
             <div class="how-grid">
               <article class="how-card">
                 <span class="step-number">01</span><span class="how-icon green">ϟ</span>
-                <div><h2>Sense</h2><p>Each room streams power, occupancy and appliance state.</p></div>
+                <div><h2>Sense</h2><p>Each room streams power, water flow, occupancy and waste logs.</p></div>
               </article>
               <article class="how-card">
                 <span class="step-number">02</span><span class="how-icon amber">⌕</span>
-                <div><h2>Detect</h2><p>Empty rooms over 0.2 kW for two readings become urgent problems.</p></div>
+                <div><h2>Detect</h2><p>Empty + &gt;0.2 kW, empty + &gt;0.5 L/min, leaks and plastic dumps become problems.</p></div>
               </article>
               <article class="how-card">
                 <span class="step-number">03</span><span class="how-icon blue">✦</span>
-                <div><h2>Save</h2><p>Mark a problem fixed to switch off the room and remove it from the queue.</p></div>
+                <div><h2>Save</h2><p>Fix, reuse greywater, or recycle — every action shows ₹, litres and CO₂ saved.</p></div>
               </article>
             </div>
+
+            <section class="panel" id="weather-panel">
+              <div class="panel-heading">
+                <div><h2>Campus weather <span class="inline-count" id="weather-live-tag">live</span></h2><p id="weather-sub">Fetching Indore weather to explain cooling demand…</p></div>
+                <span class="streaming"><span class="live-dot"></span> OPEN-METEO</span>
+              </div>
+              <div class="impact-grid" style="grid-template-columns:repeat(4,1fr)">
+                <article class="impact-card"><span class="kpi-icon blue">◐</span><small>Temperature</small><strong id="wx-temp">--°C</strong><span id="wx-cond">--</span></article>
+                <article class="impact-card"><span class="kpi-icon green">💧</span><small>Humidity</small><strong id="wx-hum">--%</strong><span id="wx-feel">feels --°C</span></article>
+                <article class="impact-card"><span class="kpi-icon amber">♨</span><small>Cooling demand</small><strong id="wx-demand">--</strong><span>drives AC waste</span></article>
+                <article class="impact-card"><span class="kpi-icon rose">⚡</span><small>Detection threshold</small><strong id="wx-threshold">0.20 kW</strong><span id="wx-note">standard</span></article>
+              </div>
+            </section>
 
             <div class="kpi-grid">
               <article class="kpi-card"><div class="kpi-top"><span>Live load</span><span class="kpi-icon blue">ϟ</span></div><strong id="kpi-live">0.00 kW</strong><small id="kpi-tick">Reading #0 · refreshes every 5s</small></article>
               <article class="kpi-card"><div class="kpi-top"><span>Used today</span><span class="kpi-icon amber">▥</span></div><strong id="kpi-used">0.00 kWh</strong><small>All rooms · lights, fans, AC, projectors</small></article>
               <article class="kpi-card"><div class="kpi-top"><span>Energy wasted</span><span class="kpi-icon rose">₹</span></div><strong id="kpi-wasted">₹0.00</strong><small id="kpi-wasted-note">0.000 kWh wasted at ₹8/unit</small></article>
               <article class="kpi-card"><div class="kpi-top"><span>CO₂ emitted</span><span class="kpi-icon green">♧</span></div><strong id="kpi-co2">0.00 kg</strong><small id="kpi-co2-note">≈0.00 trees · 0 phone charges</small></article>
+            </div>
+            <div class="kpi-grid" style="margin-top:11px">
+              <article class="kpi-card"><div class="kpi-top"><span>Water flow now</span><span class="kpi-icon blue">≋</span></div><strong id="kpi-water-flow">0.0 L/min</strong><small id="kpi-water-today">0.0 L used today</small></article>
+              <article class="kpi-card"><div class="kpi-top"><span>Water wasted</span><span class="kpi-icon amber">💧</span></div><strong id="kpi-water-wasted">0.0 L</strong><small id="kpi-water-wasted-note">leaks + taps left open</small></article>
+              <article class="kpi-card"><div class="kpi-top"><span>Greywater reused</span><span class="kpi-icon green">♻</span></div><strong id="kpi-water-reused">0.0 L</strong><small>routed to gardening / flushing</small></article>
+              <article class="kpi-card"><div class="kpi-top"><span>Plastic diverted</span><span class="kpi-icon rose">◍</span></div><strong id="kpi-plastic">0 pcs</strong><small id="kpi-plastic-note">0% diversion rate</small></article>
             </div>
 
             <section class="panel">
@@ -166,8 +195,12 @@
                 <div class="problem-list" id="dashboard-urgent-list"></div>
               </section>
               <section class="panel demo-panel">
-                <div class="panel-heading"><div><h2>Try it live</h2><p>Reproduce a waste event for the demo.</p></div></div>
-                <button class="button danger full-width" type="button" id="demo-waste">⚠ <span>Create a waste alert</span></button>
+                <div class="panel-heading"><div><h2>Try it live</h2><p>Reproduce waste events for the demo.</p></div></div>
+                <button class="button danger full-width" type="button" id="demo-waste">⚠ <span>Create energy waste</span></button>
+                <div class="button-row">
+                  <button class="button outline" type="button" id="demo-water">≋ Create water leak</button>
+                  <button class="button success" type="button" id="demo-reuse">♻ Log plastic recycled</button>
+                </div>
                 <div class="button-row">
                   <button class="button outline" type="button" id="empty-all">Empty all rooms</button>
                   <button class="button success" type="button" id="fill-all">Fill all rooms</button>
@@ -176,7 +209,7 @@
                   <button class="button speed active" type="button" data-speed="5000">Normal · 5s</button>
                   <button class="button speed" type="button" data-speed="1000">Turbo · 1s</button>
                 </div>
-                <p class="help-note">An alert appears after two readings when an empty room keeps drawing power.</p>
+                <p class="help-note">Energy: empty + &gt;0.2 kW ×2 readings. Water: empty + &gt;0.5 L/min ×2 or leak. Materials: log recycled/reused to raise diversion rate.</p>
               </section>
             </div>
 
@@ -187,39 +220,126 @@
           </section>
 
           <section class="view" data-page="alerts" id="view-alerts" hidden>
-            <div class="section-intro"><div><span class="eyebrow">LIVE QUEUE</span><h2>Urgent energy problems</h2><p>Active waste alerts are stored by the FastAPI backend and removed when fixed.</p></div><div class="stat-chip"><strong id="alerts-count">0</strong><span>active now</span></div></div>
-            <section class="panel"><div class="panel-heading"><div><h2>Ranked by urgency</h2><p>Power draw, time left running and accumulated waste determine priority.</p></div></div><div class="problem-list" id="alerts-list"></div></section>
+            <div class="section-intro"><div><span class="eyebrow">LIVE QUEUE</span><h2>Urgent problems — energy, water, materials</h2><p>Active waste alerts are stored by the FastAPI backend and removed when fixed or reused.</p></div><div class="stat-chip"><strong id="alerts-count">0</strong><span>active now</span></div></div>
+            <div class="filter-group" style="align-self:flex-start">
+              <button class="filter-button active" type="button" data-alert-filter="all">All</button>
+              <button class="filter-button" type="button" data-alert-filter="energy_waste">Energy</button>
+              <button class="filter-button" type="button" data-alert-filter="water_waste">Water</button>
+              <button class="filter-button" type="button" data-alert-filter="material_waste">Materials</button>
+              <button class="filter-button" type="button" data-alert-filter="maintenance">Maintenance</button>
+            </div>
+            <section class="panel"><div class="panel-heading"><div><h2>Ranked by urgency</h2><p>Power draw / flow rate, time left running and accumulated waste determine priority.</p></div></div><div class="problem-list" id="alerts-list"></div></section>
+          </section>
+
+          <section class="view" data-page="water" id="view-water" hidden>
+            <div class="section-intro"><div><span class="eyebrow">WATER + REUSE</span><h2>Water waste & greywater reuse</h2><p>Leaks and taps left open in empty rooms. Fix the leak or route greywater to gardening.</p></div><div class="stat-chip"><strong id="water-count">0</strong><span>active leaks</span></div></div>
+            <div class="kpi-grid">
+              <article class="kpi-card"><div class="kpi-top"><span>Flow now</span><span class="kpi-icon blue">≋</span></div><strong id="water-flow-now">0.0 L/min</strong><small>all rooms combined</small></article>
+              <article class="kpi-card"><div class="kpi-top"><span>Used today</span><span class="kpi-icon amber">▥</span></div><strong id="water-used-today">0.0 L</strong><small>taps + leaks</small></article>
+              <article class="kpi-card"><div class="kpi-top"><span>Wasted</span><span class="kpi-icon rose">💧</span></div><strong id="water-wasted-total">0.0 L</strong><small>empty-room flow + leaks</small></article>
+              <article class="kpi-card"><div class="kpi-top"><span>Reused</span><span class="kpi-icon green">♻</span></div><strong id="water-reused-total">0.0 L</strong><small>greywater to garden/flush</small></article>
+            </div>
+            <div class="dashboard-columns">
+              <section class="panel">
+                <div class="panel-heading"><div><h2>Active water problems <span class="inline-count" id="water-alert-count">0</span></h2><p>Empty + &gt;0.5 L/min for 2 readings, or any leak.</p></div></div>
+                <div class="problem-list" id="water-list"></div>
+              </section>
+              <section class="panel demo-panel">
+                <div class="panel-heading"><div><h2>Try it live</h2><p>Demo a leak in 10 seconds.</p></div></div>
+                <button class="button danger full-width" type="button" id="demo-water-2">≋ Simulate leak in empty room</button>
+                <div class="button-row">
+                  <button class="button outline" type="button" id="taps-off-all">Turn off all taps</button>
+                  <button class="button success" type="button" id="reuse-greywater">♻ Reuse greywater</button>
+                </div>
+                <p class="help-note">Fix = stop flow and delete alert. Reuse = count wasted litres as reused for gardening, then delete alert. Both are measurable savings.</p>
+              </section>
+            </div>
+            <section class="panel"><div class="panel-heading"><div><h2>Rooms — water controls</h2><p>Toggle taps and leaks per room. Flow is simulated every reading.</p></div></div><div class="room-grid" id="water-room-grid"></div></section>
+          </section>
+
+          <section class="view" data-page="materials" id="view-materials" hidden>
+            <div class="section-intro"><div><span class="eyebrow">CIRCULAR CAMPUS</span><h2>Plastic, paper & e-waste — reuse / recycle</h2><p>Log what leaves each room as disposed, recycled or reused. Diversion rate is your headline metric.</p></div><div class="stat-chip"><strong id="materials-diversion">0%</strong><span>diverted</span></div></div>
+            <div class="impact-grid">
+              <article class="impact-card"><span class="kpi-icon green">♻</span><small>Diverted</small><strong id="mat-diverted">0 pcs</strong><span id="mat-diversion-note">0% diversion</span></article>
+              <article class="impact-card"><span class="kpi-icon blue">◍</span><small>Recycled</small><strong id="mat-recycled">0 pcs</strong><span>bins → recycler</span></article>
+              <article class="impact-card"><span class="kpi-icon amber">✦</span><small>Reused</small><strong id="mat-reused">0 pcs</strong><span>refill / repurpose</span></article>
+              <article class="impact-card"><span class="kpi-icon rose">🗑</span><small>Disposed / CO₂ avoided</small><strong id="mat-disposed">0 pcs</strong><span id="mat-co2">0 kg CO₂ avoided</span></article>
+            </div>
+            <div class="report-layout">
+              <form class="panel report-form" id="material-form">
+                <div class="panel-heading"><div><h2>Log material</h2><p>e.g. 20 plastic bottles recycled in LH-1.</p></div></div>
+                <label>Room<select id="material-room" name="room_id" required></select></label>
+                <label>Material<select id="material-type" name="material" required>
+                  <option value="plastic">plastic (bottles, wrappers)</option>
+                  <option value="paper">paper</option>
+                  <option value="ewaste">e-waste</option>
+                  <option value="glass">glass</option>
+                  <option value="organic">organic / food</option>
+                  <option value="other">other</option>
+                </select></label>
+                <div class="button-row" style="grid-template-columns:1fr 1fr">
+                  <label>Qty<input id="material-qty" name="quantity" type="number" min="1" max="100000" step="1" value="10" required /></label>
+                  <label>Unit<select id="material-unit" name="unit"><option value="pcs">pcs</option><option value="kg">kg</option><option value="bins">bins</option></select></label>
+                </div>
+                <label>Action<select id="material-action" name="action" required>
+                  <option value="recycled">recycled → recycler</option>
+                  <option value="reused">reused → refill / repurpose</option>
+                  <option value="disposed">disposed → landfill</option>
+                </select></label>
+                <label>Note (optional)<input id="material-note" name="note" maxlength="200" placeholder="e.g. refill station drive" /></label>
+                <button class="button success full-width" type="submit">＋ Log material</button>
+                <p class="form-footnote">Tip for demo: log 10 disposed then 30 recycled — watch diversion rate climb.</p>
+              </form>
+              <section class="panel reports-panel">
+                <div class="panel-heading report-heading"><div><h2>Breakdown & recent logs</h2><p>Recycled + reused ÷ total = diversion rate.</p></div><button class="text-button" type="button" id="refresh-materials">Refresh</button></div>
+                <div class="table-scroll"><table class="data-table"><thead><tr><th>Material</th><th class="numeric">Disposed</th><th class="numeric">Recycled</th><th class="numeric">Reused</th></tr></thead><tbody id="materials-breakdown"></tbody></table></div>
+                <div style="height:12px"></div>
+                <div class="problem-list" id="materials-list"></div>
+              </section>
+            </div>
           </section>
 
           <section class="view" data-page="rooms" id="view-rooms" hidden>
-            <div class="section-intro"><div><span class="eyebrow">CAMPUS SIMULATOR</span><h2>Control each room</h2><p>Change occupancy and appliances to see how energy waste is detected.</p></div><div class="stat-chip"><strong id="rooms-count">8</strong><span>monitored rooms</span></div></div>
-            <div class="notice"><strong>To trigger an alert:</strong> choose an occupied room with appliances on, then set it to empty. A waste problem appears after two readings.</div>
+            <div class="section-intro"><div><span class="eyebrow">CAMPUS SIMULATOR</span><h2>Control each room</h2><p>Change occupancy, appliances, taps and leaks to see how waste is detected.</p></div><div class="stat-chip"><strong id="rooms-count">8</strong><span>monitored rooms</span></div></div>
+            <div class="notice"><strong>To trigger an alert:</strong> energy — empty an occupied room with appliances on. Water — empty a room with taps on, or toggle a leak. Alerts appear after two readings.</div>
             <div class="room-grid" id="rooms-page-grid"></div>
           </section>
 
           <section class="view" data-page="impact" id="view-impact" hidden>
-            <div class="section-intro"><div><span class="eyebrow">CAMPUS FOOTPRINT</span><h2>Savings & impact</h2><p>Translate wasted energy into money, carbon and everyday equivalents.</p></div></div>
+            <div class="section-intro"><div><span class="eyebrow">CAMPUS FOOTPRINT</span><h2>Savings & impact — energy, water, materials</h2><p>Translate wasted energy, water and waste into money, carbon and everyday equivalents.</p></div></div>
             <div class="impact-grid">
               <article class="impact-card"><span class="kpi-icon blue">ϟ</span><small>Energy lost</small><strong id="impact-energy">0.00 kWh</strong><span id="impact-phones">≈ 0 phone charges</span></article>
               <article class="impact-card"><span class="kpi-icon rose">₹</span><small>Money burned</small><strong id="impact-cost">₹0.00</strong><span>at ₹8 per unit</span></article>
               <article class="impact-card"><span class="kpi-icon amber">♧</span><small>CO₂ emitted</small><strong id="impact-co2">0.00 kg</strong><span>at 0.82 kg per unit</span></article>
               <article class="impact-card"><span class="kpi-icon green">♧</span><small>Trees to offset</small><strong id="impact-trees">0.00</strong><span>one tree absorbs ~21 kg/year</span></article>
             </div>
+            <div class="impact-grid" style="margin-top:11px">
+              <article class="impact-card"><span class="kpi-icon blue">≋</span><small>Water wasted / reused</small><strong id="impact-water">0.0 L</strong><span id="impact-water-note">0.0 L reused</span></article>
+              <article class="impact-card"><span class="kpi-icon green">♻</span><small>Diversion rate</small><strong id="impact-diversion">0%</strong><span id="impact-diversion-note">0 diverted</span></article>
+              <article class="impact-card"><span class="kpi-icon amber">◍</span><small>Plastic diverted</small><strong id="impact-plastic">0 pcs</strong><span id="impact-plastic-co2">0 kg CO₂ avoided</span></article>
+              <article class="impact-card"><span class="kpi-icon rose">🌡</span><small>Weather context</small><strong id="impact-weather">--°C</strong><span id="impact-weather-note">--</span></article>
+            </div>
             <section class="panel"><div class="panel-heading"><div><h2>Efficiency leaderboard</h2><p>Rooms ranked by least wasted energy. Fix waste to climb the board.</p></div></div><div class="table-scroll"><table class="data-table"><thead><tr><th>#</th><th>Room</th><th class="numeric">Wasted</th><th class="numeric">Efficiency score</th></tr></thead><tbody id="efficiency-rows"></tbody></table></div></section>
             <section class="projection" id="projection"></section>
-            <p class="formula-note">Formulas: cost = kWh × ₹8 · CO₂ = kWh × 0.82 kg · trees = CO₂ ÷ 21 · phones = kWh × 80 · detection = empty + &gt;0.2 kW for 2 readings.</p>
+            <section class="projection" id="projection-water" style="margin-top:11px"></section>
+            <p class="formula-note">Formulas: cost = kWh × ₹8 · CO₂ = kWh × 0.82 kg · trees = CO₂ ÷ 21 · phones = kWh × 80 · water detection = empty + &gt;0.5 L/min ×2 or leak · plastic CO₂ = pcs × 0.082 kg · diversion = (recycled+reused) ÷ total.</p>
           </section>
 
           <section class="view" data-page="reports" id="view-reports" hidden>
-            <div class="section-intro"><div><span class="eyebrow">FACILITIES WORK QUEUE</span><h2>Room problem reports</h2><p>Report faults such as broken AC, flickering lights or a dead projector. Reports persist in SQLite.</p></div><div class="stat-chip"><strong id="reports-count">0</strong><span>unresolved</span></div></div>
-            <div class="notice"><strong>Use this for equipment faults.</strong> Empty rooms with appliances left running appear automatically in the Urgent Problems queue.</div>
+            <div class="section-intro"><div><span class="eyebrow">FACILITIES WORK QUEUE</span><h2>Room problem reports</h2><p>Report faults, leaks or material dumps. Reports persist in SQLite.</p></div><div class="stat-chip"><strong id="reports-count">0</strong><span>unresolved</span></div></div>
+            <div class="notice"><strong>Use this for equipment faults, leaks and waste dumps.</strong> Sensor waste (energy/water) appears automatically in Urgent Problems.</div>
             <div class="report-layout">
               <form class="panel report-form" id="problem-form">
                 <div class="panel-heading"><div><h2>Raise a report</h2><p>Tell the facilities team what needs attention.</p></div></div>
                 <label>Reporter name<input id="reporter-name" name="reporter_name" maxlength="100" required value="Demo Student" /></label>
                 <label>Room<select id="report-room" name="room_id" required></select></label>
+                <label>Kind<select id="report-kind" name="kind" required>
+                  <option value="maintenance">maintenance — equipment fault</option>
+                  <option value="water_waste">water_waste — leak / tap left open</option>
+                  <option value="material_waste">material_waste — plastic / waste dump</option>
+                </select></label>
                 <label>Problem type<select id="report-category" name="category" required></select></label>
-                <label>Describe the problem<textarea id="report-description" name="description" rows="4" minlength="5" maxlength="2000" placeholder="e.g. AC in LH-2 stays on after the room is empty..." required></textarea></label>
+                <label>Describe the problem<textarea id="report-description" name="description" rows="4" minlength="5" maxlength="2000" placeholder="e.g. Tap in LH-2 leaking, plastic pile in canteen..." required></textarea></label>
                 <button class="button success full-width" type="submit">＋ Raise problem report</button>
                 <p class="form-footnote">Resolved reports are deleted from the backend and disappear from this queue.</p>
               </form>
@@ -232,8 +352,8 @@
         </div>
 
         <footer class="footer">
-          <span><strong>WattWatch</strong> · Campus energy waste detection</span>
-          <span>Readings every 5s · ₹8/kWh · 0.82 kg CO₂/kWh</span>
+          <span><strong>WattWatch</strong> · Campus energy + water + materials intelligence</span>
+          <span>Readings every 5s · ₹8/kWh · 0.82 kg CO₂/kWh · Open-Meteo weather</span>
         </footer>
       </main>
     </div>
